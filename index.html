@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Unclipped GIF + Pop Sound</title>
+  <style>
+    /* Full-window layout */
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #eaeaea;
+    }
+
+    /*
+      Each .water-balloon is 150×150 for bounding/collision,
+      but overflow: visible so the scaled GIF spills outside.
+    */
+    .water-balloon {
+      position: absolute;
+      width: 150px;
+      height: 150px;
+      overflow: visible; /* crucial for unclipped GIF */
+      cursor: pointer;
+    }
+
+    /* Static image covers 150×150 container exactly. */
+    .staticImage {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 150px;
+      height: 150px;
+    }
+
+    /* GIF is scaled 3×, no longer clipped due to overflow: visible. */
+    .splashGif {
+      display: none;
+      position: absolute;
+      top: 0; 
+      left: 0;
+      transform: scale(3);
+      transform-origin: center center;
+
+      /* Optional radial mask for a "splash" effect */
+      mask-image: radial-gradient(circle, rgba(0,0,0,1) 80%, rgba(0,0,0,0) 100%);
+      -webkit-mask-image: radial-gradient(circle, rgba(0,0,0,1) 80%, rgba(0,0,0,0) 100%);
+    }
+
+    /* bounceOut animation (0.5s) */
+    @keyframes bounceOut {
+      0% {
+        transform: scale(1);
+        opacity: 1;
+      }
+      50% {
+        transform: scale(1.2);
+        opacity: 0.5;
+      }
+      100% {
+        transform: scale(0);
+        opacity: 0;
+      }
+    }
+    .bounce-out {
+      animation: bounceOut 0.5s ease-out forwards;
+    }
+
+    /* fadeOut animation (0.5s) */
+    @keyframes fadeOut {
+      0% {
+        opacity: 1;
+      }
+      100% {
+        opacity: 0;
+      }
+    }
+    .fade-out {
+      animation: fadeOut 0.5s ease forwards;
+    }
+  </style>
+</head>
+<body>
+<script>
+  /*************************************************************
+   * CONFIG
+   *************************************************************/
+  const NUM_BALLOONS = 6;       // keep 6 on screen
+  const MIN_SPEED = 1;          // min speed
+  const MAX_SPEED = 3;          // max speed
+  const MIN_ROT_SPEED = -2;     // min rotation speed
+  const MAX_ROT_SPEED = 2;      // max rotation speed
+
+  // Freeze balloon on click, then remove & respawn
+  const FREEZE_WHEN_CLICKED = true;
+
+  // Audio that plays when user clicks any balloon
+  // Replace with your actual sound file
+  const popAudio = new Audio("https://thmstarkiller.github.io/trackingEMails/short_splash.mp3"); 
+
+  /*
+    We'll track each balloon in an array:
+    {
+      el, x, y, vx, vy, angle, vr, isAnimating
+    }
+  */
+  let balloonsData = [];
+
+  // Asset URLs you provided
+  const STATIC_BALLOON_URL = 
+    "https://media-hosting.imagekit.io//2a44c3eaf1bc428e/A_single_vibrant_water_balloon__1_-removebg-preview.png?Expires=1832066704&Key-Pair-Id=K2ZIVPTIP2VGHC&Signature=zGxlLsWEHvs3quNIURxG8W05LhYDpYarivoPtNm2XhHZp0-Ej6xfNt9Nltvp3J4Ubm5t-1KR2sI2Y6FuddjxALJ83mQxlX66tYswaajcX~U5pyVXF95p89l3WnjpRqxVU0ehKZHmhDZlHmvQOB4rem-rPBbCplcPvSTvTAGEpsHQFfq7UKSn7HKS~p-zmNndmiJfTpJvuwEJF58ck3z695qAe04l0yhC5457~T7ZP6FifpswBEO1Sp9iyAS3tWWtGgUZWNinNm3VzxPntsJ5GWCOOetz3vc0uvtAv2Hj5W6-yYZzqHhRIe-YHKZyg0kyrgzMva1YgegPPE6Un1rVRw__";
+
+  const SPLASH_GIF_URL =
+    "https://media-hosting.imagekit.io//a113a800e5b84b6c/zobby.gif?Expires=1832061124&Key-Pair-Id=K2ZIVPTIP2VGHC&Signature=koBzoOIsfx4sRB~JMb1Q3saXhS5CbZ4OpnLtLd4bIM1FhDvtjemZ3ca~ZZikd4u-Uvy~A1NuuomIk8Fh~1JHGfC3nH2xUe9ZEJwvcyWsPKRnL2QaxzmTPddhRFppFub7HdtSb7i6NyC9SL7BuT0EYnmrxpvXjxBT4e~2xHJcuiSmI2r-4blSMlOemMGVjmnxPt0yeyjDPi~ebz78TQORYzb-aahy5GGHMnqtdImopGgP9tB3RWck3k0vl5K9k1Vx6rSLX024EpyuNfxCYYL2qA4oLsfDysnXMqmgmN9c10ajtR0-6amnLisCvFcLmAKdTy1P5D1xm~YffvJ7a5~HyQ__";
+
+
+  /*************************************************************
+   * ENTRY POINT
+   *************************************************************/
+  window.addEventListener('DOMContentLoaded', () => {
+    // Create 6 balloons
+    for (let i = 0; i < NUM_BALLOONS; i++) {
+      spawnBalloon();
+    }
+    requestAnimationFrame(animationLoop);
+  });
+
+  /**
+   * Spawns a balloon with a 150×150 bounding box, 
+   * overflow: visible so the scaled GIF is not clipped,
+   * on click => play pop sound, freeze, bounceOut => show big GIF => fade => remove => spawn new
+   */
+  function spawnBalloon() {
+    const SIZE = 150;
+
+    // Create container
+    const balloonEl = document.createElement('div');
+    balloonEl.className = 'water-balloon';
+
+    balloonEl.innerHTML = `
+      <img class="staticImage"
+           src="${STATIC_BALLOON_URL}"
+           alt="Static Balloon">
+      <img class="splashGif"
+           src="${SPLASH_GIF_URL}"
+           alt="Splash GIF">
+    `;
+    document.body.appendChild(balloonEl);
+
+    // Random position
+    let x = Math.random() * (window.innerWidth - SIZE);
+    let y = Math.random() * (window.innerHeight - SIZE);
+    balloonEl.style.left = x + "px";
+    balloonEl.style.top  = y + "px";
+
+    // Random velocity & rotation
+    let vx = randomRange(MIN_SPEED, MAX_SPEED) * (Math.random() < 0.5 ? -1 : 1);
+    let vy = randomRange(MIN_SPEED, MAX_SPEED) * (Math.random() < 0.5 ? -1 : 1);
+    let vr = randomRange(MIN_ROT_SPEED, MAX_ROT_SPEED);
+
+    let data = {
+      el: balloonEl,
+      x, y,
+      vx, vy,
+      angle: 0,
+      vr,
+      isAnimating: false
+    };
+    balloonsData.push(data);
+
+    // Hook up the click => play audio => freeze => bounceOut => show GIF => fade => remove => spawn new
+    const staticImg = balloonEl.querySelector('.staticImage');
+    const splashGif = balloonEl.querySelector('.splashGif');
+
+    staticImg.addEventListener('click', () => {
+      if (data.isAnimating) return;
+      data.isAnimating = true;
+
+      // **Play audio**: reset & play
+      popAudio.currentTime = 0;
+      popAudio.play().catch(err => {
+        console.warn("Audio play failed:", err);
+      });
+
+      // freeze if desired
+      if (FREEZE_WHEN_CLICKED) {
+        data.vx = 0;
+        data.vy = 0;
+        data.vr = 0;
+      }
+
+      // bounceOut
+      staticImg.classList.add('bounce-out');
+    });
+
+    // Once bounceOut ends => hide static, show & reset GIF, fade
+    staticImg.addEventListener('animationend', function onBounceEnd(e) {
+      if (e.animationName !== 'bounceOut') return;
+
+      staticImg.classList.remove('bounce-out');
+      staticImg.style.display = 'none';
+
+      // Show & reset GIF
+      splashGif.style.display = 'block';
+      const oldSrc = splashGif.src;
+      splashGif.src = '';
+      splashGif.src = oldSrc;
+
+      // Start 0.5s fade-out
+      splashGif.classList.add('fade-out');
+    });
+
+    // Once fade-out ends => remove balloon & spawn new
+    splashGif.addEventListener('animationend', function onFadeEnd(e) {
+      if (e.animationName !== 'fadeOut') return;
+
+      splashGif.classList.remove('fade-out');
+      splashGif.style.display = 'none';
+
+      // Remove from DOM
+      balloonEl.remove();
+      // Remove from array
+      balloonsData = balloonsData.filter(b => b.el !== balloonEl);
+      // Spawn new
+      spawnBalloon();
+    });
+  }
+
+  /**
+   * The main animation loop: update positions/rotations, bounce edges.
+   */
+  function animationLoop() {
+    for (const data of balloonsData) {
+      data.x += data.vx;
+      data.y += data.vy;
+      data.angle += data.vr;
+
+      const SIZE = 150;
+      // Horizontal bounce
+      if (data.x < 0) {
+        data.x = 0;
+        data.vx = -data.vx;
+      } else if (data.x > window.innerWidth - SIZE) {
+        data.x = window.innerWidth - SIZE;
+        data.vx = -data.vx;
+      }
+      // Vertical bounce
+      if (data.y < 0) {
+        data.y = 0;
+        data.vy = -data.vy;
+      } else if (data.y > window.innerHeight - SIZE) {
+        data.y = window.innerHeight - SIZE;
+        data.vy = -data.vy;
+      }
+
+      // Apply updated position/rotation
+      data.el.style.left = data.x + "px";
+      data.el.style.top  = data.y + "px";
+      data.el.style.transform = `rotate(${data.angle}deg)`;
+    }
+    requestAnimationFrame(animationLoop);
+  }
+
+  /** Utility to get random float in [min, max] */
+  function randomRange(min, max) {
+    return Math.random() * (max - min) + min;
+  }
+</script>
+</body>
+</html>
