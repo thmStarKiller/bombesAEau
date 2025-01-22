@@ -1,282 +1,224 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8" />
-  <!-- Prevent mobile browsers from zooming or resizing the viewport -->
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
-  />
-  <title>Responsive Balloons with Fixed Viewport</title>
-  <style>
-    /* 
-      Lock the body in a fixed layout so the address bar 
-      doesn't push the document around on iOS Safari. 
-    */
-    html, body {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;  /* no scrolling; prevents iOS rubber-band scroll */
-      background: #eaeaea;
-      touch-action: none; /* prevents default pinch/zoom gestures on many browsers */
+<style>
+    .mounia {
+        height: 1080px;
     }
-
-    /* 
-      Each .water-balloon is absolutely positioned, 
-      with overflow: visible so the scaled GIF can spill out.
-    */
-    .water-balloon {
-      position: absolute;
-      overflow: visible;
-      cursor: pointer;
-    }
-
-    /* The static balloon image gets sized by JS to match container. */
-    .staticImage {
-      position: absolute;
-      top: 0; 
-      left: 0;
-    }
-
-    /* 
-      The GIF is scaled up 3×, 
-      no clipping due to overflow: visible. 
-    */
-    .splashGif {
-      display: none;
-      position: absolute;
-      top: 0; 
-      left: 0;
-      transform: scale(3);
-      transform-origin: center center;
-
-      /* Optional radial mask for a "splash" effect */
-      mask-image: radial-gradient(circle, rgba(0,0,0,1) 80%, rgba(0,0,0,0) 100%);
-      -webkit-mask-image: radial-gradient(circle, rgba(0,0,0,1) 80%, rgba(0,0,0,0) 100%);
-    }
-
-    /* bounceOut animation: 0.5s */
-    @keyframes bounceOut {
-      0% {
-        transform: scale(1);
-        opacity: 1;
-      }
-      50% {
-        transform: scale(1.2);
-        opacity: 0.5;
-      }
-      100% {
-        transform: scale(0);
-        opacity: 0;
-      }
-    }
-    .bounce-out {
-      animation: bounceOut 0.5s ease-out forwards;
-    }
-
-    /* fadeOut animation: 0.5s */
-    @keyframes fadeOut {
-      0% {
-        opacity: 1;
-      }
-      100% {
-        opacity: 0;
-      }
-    }
-    .fade-out {
-      animation: fadeOut 0.5s ease forwards;
-    }
-  </style>
-</head>
-<body>
+</style>
+<div class="mounia"></div>
 <script>
-  /*************************************************************
-   * 1) Determine balloon size based on viewport width
-   *************************************************************/
-  const isMobile = window.innerWidth < 600;
-  const BALLOON_SIZE = isMobile ? 80 : 150;
+    (function () {
+        /****************************************************************
+         * CONFIGURATION
+         ****************************************************************/
+        var OVERLAY_IMAGE_URL = "https://i.imgur.com/KdtieIG.png";
+        // Replace with your desired overlay image URL.
 
-  /*************************************************************
-   * 2) Other Config
-   *************************************************************/
-  const NUM_BALLOONS = 6;           // keep 6 on screen
-  const MIN_SPEED = 1;             // min speed
-  const MAX_SPEED = 3;             // max speed
-  const MIN_ROT_SPEED = -2;        // min rotation speed
-  const MAX_ROT_SPEED = 2;         // max rotation speed
+        var NUM_BALLOONS = 6;
+        var FREEZE_WHEN_CLICKED = true;
 
-  // We'll freeze the balloon on click, then remove & respawn
-  const FREEZE_WHEN_CLICKED = true;
+        var isMobile = window.innerWidth < 600;
+        var BALLOON_SIZE = isMobile ? 80 : 150;
+        var MIN_SPEED = 1, MAX_SPEED = 3;
+        var MIN_ROT_SPEED = -2, MAX_ROT_SPEED = 2;
 
-  // Audio that plays when user clicks any balloon (replace URL)
-  const popAudio = new Audio("https://thmstarkiller.github.io/trackingEMails/short_splash.mp3"); 
+        var popAudio = new Audio("https://thmstarkiller.github.io/trackingEMails/short_splash.mp3");
 
-  /*
-    We'll track each balloon in an array:
-    {
-      el, x, y, vx, vy, angle, vr, isAnimating
-    }
-  */
-  let balloonsData = [];
+        var STATIC_BALLOON_URL =
+            "https://media-hosting.imagekit.io//2a44c3eaf1bc428e/A_single_vibrant_water_balloon__1_-removebg-preview.png?Expires=1832066704&Key-Pair-Id=K2ZIVPTIP2VGHC&Signature=zGxlLsWEHvs3quNIURxG8W05LhYDpYarivoPtNm2XhHZp0-Ej6xfNt9Nltvp3J4Ubm5t-1KR2sI2Y6FuddjxALJ83mQxlX66tYswaajcX~U5pyVXF95p89l3WnjpRqxVU0ehKZHmhDZlHmvQOB4rem-rPBbCplcPvSTvTAGEpsHQFfq7UKSn7HKS~p-zmNndmiJfTpJvuwEJF58ck3z695qAe04l0yhC5457~T7ZP6FifpswBEO1Sp9iyAS3tWWtGgUZWNinNm3VzxPntsJ5GWCOOetz3vc0uvtAv2Hj5W6-yYZzqHhRIe-YHKZyg0kyrgzMva1YgegPPE6Un1rVRw__";
 
-  // Asset URLs
-  const STATIC_BALLOON_URL = 
-    "https://media-hosting.imagekit.io//2a44c3eaf1bc428e/A_single_vibrant_water_balloon__1_-removebg-preview.png?Expires=1832066704&Key-Pair-Id=K2ZIVPTIP2VGHC&Signature=zGxlLsWEHvs3quNIURxG8W05LhYDpYarivoPtNm2XhHZp0-Ej6xfNt9Nltvp3J4Ubm5t-1KR2sI2Y6FuddjxALJ83mQxlX66tYswaajcX~U5pyVXF95p89l3WnjpRqxVU0ehKZHmhDZlHmvQOB4rem-rPBbCplcPvSTvTAGEpsHQFfq7UKSn7HKS~p-zmNndmiJfTpJvuwEJF58ck3z695qAe04l0yhC5457~T7ZP6FifpswBEO1Sp9iyAS3tWWtGgUZWNinNm3VzxPntsJ5GWCOOetz3vc0uvtAv2Hj5W6-yYZzqHhRIe-YHKZyg0kyrgzMva1YgegPPE6Un1rVRw__";
+        var SPLASH_GIF_URL =
+            "https://media-hosting.imagekit.io//a113a800e5b84b6c/zobby.gif?Expires=1832061124&Key-Pair-Id=K2ZIVPTIP2VGHC&Signature=koBzoOIsfx4sRB~JMb1Q3saXhS5CbZ4OpnLtLd4bIM1FhDvtjemZ3ca~ZZikd4u-Uvy~A1NuuomIk8Fh~1JHGfC3nH2xUe9ZEJwvcyWsPKRnL2QaxzmTPddhRFppFub7HdtSb7i6NyC9SL7BuT0EYnmrxpvXjxBT4e~2xHJcuiSmI2r-4blSMlOemMGVjmnxPt0yeyjDPi~ebz78TQORYzb-aahy5GGHMnqtdImopGgP9tB3RWck3k0vl5K9k1Vx6rSLX024EpyuNfxCYYL2qA4oLsfDysnXMqmgmN9c10ajtR0-6amnLisCvFcLmAKdTy1P5D1xm~YffvJ7a5~HyQ__";
 
-  const SPLASH_GIF_URL =
-    "https://media-hosting.imagekit.io//a113a800e5b84b6c/zobby.gif?Expires=1832061124&Key-Pair-Id=K2ZIVPTIP2VGHC&Signature=koBzoOIsfx4sRB~JMb1Q3saXhS5CbZ4OpnLtLd4bIM1FhDvtjemZ3ca~ZZikd4u-Uvy~A1NuuomIk8Fh~1JHGfC3nH2xUe9ZEJwvcyWsPKRnL2QaxzmTPddhRFppFub7HdtSb7i6NyC9SL7BuT0EYnmrxpvXjxBT4e~2xHJcuiSmI2r-4blSMlOemMGVjmnxPt0yeyjDPi~ebz78TQORYzb-aahy5GGHMnqtdImopGgP9tB3RWck3k0vl5K9k1Vx6rSLX024EpyuNfxCYYL2qA4oLsfDysnXMqmgmN9c10ajtR0-6amnLisCvFcLmAKdTy1P5D1xm~YffvJ7a5~HyQ__";
+        var popCount = 0;
+        var balloonsData = [];
 
+        /****************************************************************
+         * Insert Meta Tag
+         ****************************************************************/
+        var metaViewport = document.querySelector('meta[name="viewport"]');
+        if (!metaViewport) {
+            metaViewport = document.createElement('meta');
+            metaViewport.name = "viewport";
+            metaViewport.content = "width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no";
+            document.head.appendChild(metaViewport);
+        } else {
+            metaViewport.content = "width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no";
+        }
 
-  /*************************************************************
-   * On DOM load => create balloons, start anim loop
-   *************************************************************/
-  window.addEventListener('DOMContentLoaded', () => {
-    for (let i = 0; i < NUM_BALLOONS; i++) {
-      spawnBalloon();
-    }
-    requestAnimationFrame(animationLoop);
-  });
+        /****************************************************************
+         * Inject CSS
+         ****************************************************************/
+        var styleContent = `
+        html, body { margin:0; padding:0; background:transparent; touch-action:none; }
+        
+        /* Overlay chunks covering non-overlapping thirds of screen */
+        .overlay-chunk {
+          position: fixed;
+          top: 0;
+          height: 100%;
+          width: 34%;
+          background: url('${OVERLAY_IMAGE_URL}') no-repeat center/cover;
+          z-index: 9990;
+          pointer-events: none;
+        }
+        #overlay-chunk-1 { left: 0; }
+        #overlay-chunk-2 { left: 33.33%; }
+        #overlay-chunk-3 { left: 66.66%; }
+    
+        @keyframes meltdown {
+          0% { opacity:1; transform:translateY(0) scaleY(1); filter:none; }
+          50% { filter:blur(10px); }
+          100% { opacity:0; transform:translateY(20%) scaleY(0); filter:blur(20px); }
+        }
+        .melt-anim { animation: meltdown 1s forwards ease-in; }
+    
+        .water-balloon { position:absolute; overflow:visible; cursor:pointer; z-index:9999; }
+        .staticImage { position:absolute; top:0; left:0; width:100%; height:100%; }
+        .splashGif { display:none; position:absolute; top:0; left:0; transform:scale(17); transform-origin:center center;
+          mask-image:radial-gradient(circle, rgba(0,0,0,1) 80%, rgba(0,0,0,0) 100%);
+          -webkit-mask-image:radial-gradient(circle, rgba(0,0,0,1) 80%, rgba(0,0,0,0) 100%);
+        }
+        @keyframes bounceOut { 0% { transform:scale(1); opacity:1; } 50% { transform:scale(1.2); opacity:0.5; } 100% { transform:scale(0); opacity:0; } }
+        .bounce-out { animation:bounceOut 0.5s ease-out forwards; }
+        @keyframes fadeOut { 0% { opacity:1; } 100% { opacity:0; } }
+        .fade-out { animation:fadeOut 0.5s ease forwards; }
+      `;
+        var styleElem = document.createElement('style');
+        styleElem.type = "text/css";
+        styleElem.appendChild(document.createTextNode(styleContent));
+        document.head.appendChild(styleElem);
 
-  /**
-   * Spawns one balloon, sized BALLOON_SIZE × BALLOON_SIZE, 
-   * overflow: visible for the big GIF, collision logic uses BALLOON_SIZE.
-   */
-  function spawnBalloon() {
-    // Create container
-    const balloonEl = document.createElement('div');
-    balloonEl.className = 'water-balloon';
+        /****************************************************************
+         * Create 3 Overlay Chunks (non-overlapping thirds)
+         ****************************************************************/
+        for (var i = 1; i <= 3; i++) {
+            var chunk = document.createElement('div');
+            chunk.id = 'overlay-chunk-' + i;
+            chunk.className = 'overlay-chunk';
+            document.body.appendChild(chunk);
+        }
 
-    // Let’s set explicit width/height in CSS
-    balloonEl.style.width  = BALLOON_SIZE + "px";
-    balloonEl.style.height = BALLOON_SIZE + "px";
+        /****************************************************************
+         * Balloon Logic
+         ****************************************************************/
+        window.addEventListener('DOMContentLoaded', function () {
+            for (var i = 0; i < NUM_BALLOONS; i++) {
+                spawnBalloon();
+            }
+            requestAnimationFrame(animationLoop);
+        });
 
-    balloonEl.innerHTML = `
-      <img class="staticImage"
-           src="${STATIC_BALLOON_URL}"
-           alt="Balloon"
-           style="width:${BALLOON_SIZE}px; height:${BALLOON_SIZE}px;">
-      <img class="splashGif"
-           src="${SPLASH_GIF_URL}"
-           alt="Splash GIF">
-    `;
-    document.body.appendChild(balloonEl);
+        function spawnBalloon() {
+            var balloonEl = document.createElement('div');
+            balloonEl.className = 'water-balloon';
+            balloonEl.style.width = BALLOON_SIZE + "px";
+            balloonEl.style.height = BALLOON_SIZE + "px";
 
-    // Random position
-    let x = Math.random() * (window.innerWidth - BALLOON_SIZE);
-    let y = Math.random() * (window.innerHeight - BALLOON_SIZE);
-    balloonEl.style.left = x + "px";
-    balloonEl.style.top  = y + "px";
+            balloonEl.innerHTML = '<img class="staticImage" src="' + STATIC_BALLOON_URL +
+                '" alt="Balloon" style="width:' + BALLOON_SIZE + 'px; height:' + BALLOON_SIZE + 'px;">' +
+                '<img class="splashGif" src="' + SPLASH_GIF_URL + '" alt="Splash GIF">';
 
-    // Random velocities
-    let vx = randomRange(MIN_SPEED, MAX_SPEED) * (Math.random() < 0.5 ? -1 : 1);
-    let vy = randomRange(MIN_SPEED, MAX_SPEED) * (Math.random() < 0.5 ? -1 : 1);
-    let vr = randomRange(MIN_ROT_SPEED, MAX_ROT_SPEED);
+            // Append balloons to the body (above overlay because of z-index)
+            document.body.appendChild(balloonEl);
 
-    let data = {
-      el: balloonEl,
-      x, y,
-      vx, vy,
-      angle: 0,
-      vr,
-      isAnimating: false
-    };
-    balloonsData.push(data);
+            var x = Math.random() * (window.innerWidth - BALLOON_SIZE);
+            var y = Math.random() * (window.innerHeight - BALLOON_SIZE);
+            balloonEl.style.left = x + "px";
+            balloonEl.style.top = y + "px";
 
-    // Hook up click => pop sound => freeze => bounceOut => fadeOut => remove => spawn
-    const staticImg = balloonEl.querySelector('.staticImage');
-    const splashGif = balloonEl.querySelector('.splashGif');
+            var vx = randomRange(MIN_SPEED, MAX_SPEED) * (Math.random() < 0.5 ? -1 : 1);
+            var vy = randomRange(MIN_SPEED, MAX_SPEED) * (Math.random() < 0.5 ? -1 : 1);
+            var vr = randomRange(MIN_ROT_SPEED, MAX_ROT_SPEED);
 
-    staticImg.addEventListener('click', () => {
-      if (data.isAnimating) return;
-      data.isAnimating = true;
+            var data = {
+                el: balloonEl,
+                x: x, y: y,
+                vx: vx, vy: vy,
+                angle: 0,
+                vr: vr,
+                isAnimating: false
+            };
+            balloonsData.push(data);
 
-      // Play audio
-      popAudio.currentTime = 0;
-      popAudio.play().catch(err => console.warn("Audio blocked:", err));
+            var staticImg = balloonEl.querySelector('.staticImage');
+            var splashGif = balloonEl.querySelector('.splashGif');
 
-      // Freeze if desired
-      if (FREEZE_WHEN_CLICKED) {
-        data.vx = 0;
-        data.vy = 0;
-        data.vr = 0;
-      }
+            staticImg.addEventListener('click', function () {
+                if (data.isAnimating) return;
+                data.isAnimating = true;
 
-      // bounceOut
-      staticImg.classList.add('bounce-out');
-    });
+                popAudio.currentTime = 0;
+                popAudio.play().catch(function (err) { console.warn("Audio blocked:", err); });
 
-    // Once bounceOut ends => hide static, show & reset GIF, immediate fade-out
-    staticImg.addEventListener('animationend', function onBounceEnd(e) {
-      if (e.animationName !== 'bounceOut') return;
+                if (FREEZE_WHEN_CLICKED) {
+                    data.vx = 0; data.vy = 0; data.vr = 0;
+                }
+                staticImg.classList.add('bounce-out');
+            });
 
-      staticImg.classList.remove('bounce-out');
-      staticImg.style.display = 'none';
+            staticImg.addEventListener('animationend', function (e) {
+                if (e.animationName !== 'bounceOut') return;
+                staticImg.classList.remove('bounce-out');
+                staticImg.style.display = 'none';
 
-      // Show & reset the GIF
-      splashGif.style.display = 'block';
-      const oldSrc = splashGif.src;
-      splashGif.src = '';
-      splashGif.src = oldSrc;
+                splashGif.style.display = 'block';
+                var oldSrc = splashGif.src;
+                splashGif.src = '';
+                splashGif.src = oldSrc;
 
-      // Start 0.5s fade
-      splashGif.classList.add('fade-out');
-    });
+                splashGif.classList.add('fade-out');
+            });
 
-    // Once fadeOut ends => remove balloon + spawn new
-    splashGif.addEventListener('animationend', function onFadeEnd(e) {
-      if (e.animationName !== 'fadeOut') return;
+            splashGif.addEventListener('animationend', function (e) {
+                if (e.animationName !== 'fadeOut') return;
+                splashGif.classList.remove('fade-out');
+                splashGif.style.display = 'none';
 
-      splashGif.classList.remove('fade-out');
-      splashGif.style.display = 'none';
+                balloonEl.remove();
+                balloonsData = balloonsData.filter(function (b) { return b.el !== balloonEl; });
+                spawnBalloon();
 
-      // Remove from DOM
-      balloonEl.remove();
-      // Filter out from array
-      balloonsData = balloonsData.filter(b => b.el !== balloonEl);
-      // Respawn
-      spawnBalloon();
-    });
-  }
+                revealOverlayChunk();
+            });
+        }
 
-  /**
-   * The main animation loop: move & rotate each balloon, bounce edges.
-   */
-  function animationLoop() {
-    for (const data of balloonsData) {
-      data.x += data.vx;
-      data.y += data.vy;
-      data.angle += data.vr;
+        function revealOverlayChunk() {
+            popCount++;
+            if (popCount === 1) {
+                var chunk = document.getElementById('overlay-chunk-1');
+                if (chunk) { chunk.classList.add('melt-anim'); chunk.addEventListener('animationend', function () { chunk.remove(); }, { once: true }); }
+            } else if (popCount === 2) {
+                var chunk = document.getElementById('overlay-chunk-2');
+                if (chunk) { chunk.classList.add('melt-anim'); chunk.addEventListener('animationend', function () { chunk.remove(); }, { once: true }); }
+            } else if (popCount === 3) {
+                var chunk = document.getElementById('overlay-chunk-3');
+                if (chunk) {
+                    chunk.classList.add('melt-anim');
+                    chunk.addEventListener('animationend', function () { chunk.remove(); }, { once: true });
+                }
+            }
+        }
 
-      // Boundaries
-      if (data.x < 0) {
-        data.x = 0;
-        data.vx = -data.vx;
-      } else if (data.x > window.innerWidth - BALLOON_SIZE) {
-        data.x = window.innerWidth - BALLOON_SIZE;
-        data.vx = -data.vx;
-      }
-      if (data.y < 0) {
-        data.y = 0;
-        data.vy = -data.vy;
-      } else if (data.y > window.innerHeight - BALLOON_SIZE) {
-        data.y = window.innerHeight - BALLOON_SIZE;
-        data.vy = -data.vy;
-      }
+        function animationLoop() {
+            for (var i = 0; i < balloonsData.length; i++) {
+                var data = balloonsData[i];
+                data.x += data.vx;
+                data.y += data.vy;
+                data.angle += data.vr;
 
-      // Apply transform
-      data.el.style.left = data.x + "px";
-      data.el.style.top  = data.y + "px";
-      data.el.style.transform = `rotate(${data.angle}deg)`;
-    }
-    requestAnimationFrame(animationLoop);
-  }
+                if (data.x < 0) { data.x = 0; data.vx = -data.vx; }
+                else if (data.x > window.innerWidth - BALLOON_SIZE) { data.x = window.innerWidth - BALLOON_SIZE; data.vx = -data.vx; }
+                if (data.y < 0) { data.y = 0; data.vy = -data.vy; }
+                else if (data.y > window.innerHeight - BALLOON_SIZE) { data.y = window.innerHeight - BALLOON_SIZE; data.vy = -data.vy; }
 
-  /** Utility: random float in [min, max] */
-  function randomRange(min, max) {
-    return Math.random() * (max - min) + min;
-  }
+                data.el.style.left = data.x + "px";
+                data.el.style.top = data.y + "px";
+                data.el.style.transform = "rotate(" + data.angle + "deg)";
+            }
+            requestAnimationFrame(animationLoop);
+        }
+
+        function randomRange(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+    })();
 </script>
-</body>
-</html>
